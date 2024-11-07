@@ -1,0 +1,13 @@
+{
+    "name": "linux-network-monitor",
+    "main": "main.js",
+    "scripts": {
+        "start": "nw src/",
+        "dev": "nw src/",
+        "build": "nw-builder --platforms linux32,linux64 --buildDir dist/ src/"
+    },
+    "devDependencies": {
+        "nw": "^0.93.0-sdk",
+        "nw-builder": "^4.11.6"
+    }
+}
