@@ -3,7 +3,7 @@
     "main": "main.js",
     "scripts": {
         "start": "nw src/",
-        "dev": "nw src/",
+        "dev": "nw src/ --enable-logging=stderr",
         "build": "nw-builder --platforms linux32,linux64 --buildDir dist/ src/"
     },
     "devDependencies": {
