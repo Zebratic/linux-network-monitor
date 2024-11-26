@@ -1,13 +1,8 @@
 {
-    "name": "linux-network-monitor",
-    "main": "main.js",
-    "scripts": {
-        "start": "nw src/",
-        "dev": "nw src/ --enable-logging=stderr",
-        "build": "nw-builder --platforms linux32,linux64 --buildDir dist/ src/"
-    },
-    "devDependencies": {
-        "nw": "^0.93.0-sdk",
-        "nw-builder": "^4.11.6"
-    }
+  "type": "module",
+  "dependencies": {
+    "express": "^4.21.1",
+    "express-ws": "^5.0.2",
+    "ps-list": "^8.1.1"
+  }
 }

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #connections {
+            margin-top: 20px;
+        }
+        .connection {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Active Connections</h1>
+    <div id="connections"></div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const connectionsDiv = document.getElementById('connections');
+
+        ws.onmessage = (event) => {
+            const connections = JSON.parse(event.data);
+            connectionsDiv.innerHTML = '';
+            connections.forEach(conn => {
+                const connDiv = document.createElement('div');
+                connDiv.className = 'connection';
+                connDiv.textContent = JSON.stringify(conn, null, 2);
+                connectionsDiv.appendChild(connDiv);
+            });
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket connection closed');
+            // Optionally implement reconnection logic here
+        };
+    </script>
+</body>
+</html> 
