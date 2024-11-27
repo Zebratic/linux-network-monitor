@@ -4,45 +4,292 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Connection Monitor</title>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <style>
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --border-color: #404040;
+            --highlight: #3498db;
+            --card-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            --hover-bg: #353535;
+        }
+
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
         }
+
+        h1 {
+            color: var(--text-primary);
+        }
+
+        #processes {
+            margin: 20px 0;
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        #search {
+            padding: 8px 12px;
+            margin-bottom: 15px;
+            width: 250px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        #search::placeholder {
+            color: var(--text-secondary);
+        }
+
+        #processList {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            border-radius: 4px;
+            background: var(--bg-primary);
+        }
+
+        .process-item {
+            cursor: pointer;
+            padding: 8px 12px;
+            margin: 2px 0;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .process-item:hover {
+            background-color: var(--hover-bg);
+        }
+
         #connections {
             margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
         }
+
         .connection {
-            background: #f5f5f5;
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s;
+            border: 1px solid var(--border-color);
+        }
+
+        .connection:hover {
+            transform: translateY(-2px);
+        }
+
+        #currentProcess {
+            margin: 10px 0;
+            font-weight: bold;
+            color: var(--highlight);
             padding: 10px;
-            margin: 5px 0;
+            background: var(--bg-primary);
             border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .connection-header {
+            font-weight: bold;
+            color: var(--highlight);
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .connection-detail {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .connection-label {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .connection-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .packets {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            text-align: right;
+            color: var(--highlight);
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--highlight);
         }
     </style>
 </head>
 <body>
-    <h1>Active Connections</h1>
+    <h1>Connection Monitor</h1>
+    
+    <div id="processes">
+        <input type="text" id="search" placeholder="Search processes...">
+        <div id="currentProcess">No process selected</div>
+        <div id="processList"></div>
+    </div>
+
     <div id="connections"></div>
 
     <script>
-        const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        const connectionsDiv = document.getElementById('connections');
+        $(document).ready(function() {
+            const ws = new WebSocket(`ws://${window.location.host}/ws`);
+            const $connectionsDiv = $('#connections');
+            const $processListDiv = $('#processList');
+            const $searchInput = $('#search');
+            const $currentProcessDiv = $('#currentProcess');
+            let processes = [];
+            let connectionElements = new Map();
 
-        ws.onmessage = (event) => {
-            const connections = JSON.parse(event.data);
-            connectionsDiv.innerHTML = '';
-            connections.forEach(conn => {
-                const connDiv = document.createElement('div');
-                connDiv.className = 'connection';
-                connDiv.textContent = JSON.stringify(conn, null, 2);
-                connectionsDiv.appendChild(connDiv);
+            function formatDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleString();
+            }
+
+            function getConnectionKey(conn) {
+                return `${conn.remoteAddress || conn.ip}:${conn.remotePort || conn.port}`;
+            }
+
+            function createConnectionElement(conn) {
+                return $(`
+                    <div class="connection">
+                        <div class="connection-header">
+                            Connection Details
+                        </div>
+                        <div class="connection-detail">
+                            <span class="connection-label">IP Address:</span>
+                            <span class="connection-value">${conn.remoteAddress || conn.ip}</span>
+                        </div>
+                        <div class="connection-detail">
+                            <span class="connection-label">Port:</span>
+                            <span class="connection-value">${conn.remotePort || conn.port}</span>
+                        </div>
+                        <div class="connection-detail">
+                            <span class="connection-label">Process ID:</span>
+                            <span class="connection-value">${conn.pid}</span>
+                        </div>
+                        <div class="connection-detail">
+                            <span class="connection-label">Last Seen:</span>
+                            <span class="connection-value last-seen">${formatDate(conn.lastSeen)}</span>
+                        </div>
+                        <div class="packets">
+                            <span class="packet-count">${conn.packets}</span> packets
+                        </div>
+                    </div>
+                `);
+            }
+
+            function updateConnectionElement($element, conn) {
+                $element.find('.last-seen').text(formatDate(conn.lastSeen));
+                $element.find('.packet-count').text(conn.packets);
+            }
+
+            async function fetchProcesses() {
+                try {
+                    const response = await $.get('/processes');
+                    processes = response;
+                    displayProcesses(processes);
+                } catch (error) {
+                    console.error('Error fetching processes:', error);
+                }
+            }
+
+            function displayProcesses(processesToShow) {
+                $processListDiv.empty();
+                processesToShow.forEach(proc => {
+                    $('<div>')
+                        .addClass('process-item')
+                        .text(`${proc.name} (${proc.pids.length} instances)`)
+                        .on('click', () => selectProcess(proc))
+                        .appendTo($processListDiv);
+                });
+            }
+
+            function selectProcess(proc) {
+                $currentProcessDiv.text(`Monitoring: ${proc.name} (${proc.pids.length} instances)`);
+                connectionElements.clear();
+                $connectionsDiv.empty();
+                ws.send(JSON.stringify({
+                    type: 'monitor',
+                    pids: proc.pids
+                }));
+            }
+
+            $searchInput.on('input', function() {
+                const searchTerm = $(this).val().toLowerCase();
+                const filteredProcesses = processes.filter(proc => 
+                    proc.name.toLowerCase().includes(searchTerm)
+                );
+                displayProcesses(filteredProcesses);
             });
-        };
 
-        ws.onclose = () => {
-            console.log('WebSocket connection closed');
-            // Optionally implement reconnection logic here
-        };
+            ws.onmessage = (event) => {
+                const connections = JSON.parse(event.data);
+                const currentKeys = new Set();
+
+                connections.forEach(conn => {
+                    const key = getConnectionKey(conn);
+                    currentKeys.add(key);
+
+                    if (connectionElements.has(key)) {
+                        updateConnectionElement(connectionElements.get(key), conn);
+                    } else {
+                        const $element = createConnectionElement(conn);
+                        connectionElements.set(key, $element);
+                        $connectionsDiv.append($element);
+                    }
+                });
+
+                connectionElements.forEach((element, key) => {
+                    if (!currentKeys.has(key)) {
+                        element.remove();
+                        connectionElements.delete(key);
+                    }
+                });
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket connection closed');
+                $currentProcessDiv.text('WebSocket connection closed');
+            };
+
+            fetchProcesses();
+        });
     </script>
 </body>
 </html> 
