@@ -153,6 +153,33 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--highlight);
         }
+
+        /* Add these new styles */
+        .copy-button {
+            cursor: pointer;
+            padding: 2px 6px;
+            background: var(--highlight);
+            border: none;
+            border-radius: 3px;
+            color: white;
+            font-size: 0.8em;
+            opacity: 0;
+            transition: opacity 0.2s;
+            margin-left: 8px;
+        }
+
+        .connection:hover .copy-button {
+            opacity: 1;
+        }
+
+        .copy-button:hover {
+            background: #2980b9;
+        }
+
+        .connection-ip-port {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -186,13 +213,15 @@
             }
 
             function createConnectionElement(conn) {
+                const ipPort = `${conn.remoteAddress || conn.ip} ${conn.remotePort || conn.port}`;
                 return $(`
                     <div class="connection">
                         <div class="connection-header">
                             Connection Details
+                            <button class="copy-button" data-value="${ipPort}">Copy</button>
                         </div>
                         <div class="connection-detail">
-                            <span class="connection-label">IP Address:</span>
+                            <span class="connection-label">IP:</span>
                             <span class="connection-value">${conn.remoteAddress || conn.ip}</span>
                         </div>
                         <div class="connection-detail">
@@ -215,8 +244,11 @@
             }
 
             function updateConnectionElement($element, conn) {
+                const ipPort = `${conn.remoteAddress || conn.ip} ${conn.remotePort || conn.port}`;
                 $element.find('.last-seen').text(formatDate(conn.lastSeen));
                 $element.find('.packet-count').text(conn.packets);
+                $element.find('.copy-button').data('value', ipPort);
+                $element.find('.connection-ip-port .connection-value').text(ipPort);
             }
 
             async function fetchProcesses() {
@@ -289,6 +321,21 @@
             };
 
             fetchProcesses();
+
+            // Add this new function for copy functionality
+            $(document).on('click', '.copy-button', function() {
+                const textToCopy = $(this).data('value');
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    let oldText = $(this).text();
+                    const $button = $(this);
+                    $button.text('Copied!');
+                    setTimeout(() => {
+                        $button.text(oldText);
+                    }, 1000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                });
+            });
         });
     </script>
 </body>
