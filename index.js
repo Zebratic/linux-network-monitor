@@ -26,6 +26,13 @@ const wsInstance = expressWs(app);
 const clients = new Set();
 let currentParsers = new Map(); // Map to store multiple parsers
 
+// Function to stop all parsers and clear the map
+function stopAllParsers() {
+    console.log('Stopping all strace processes - no clients connected');
+    currentParsers.forEach(parser => parser.stopMonitoring());
+    currentParsers.clear();
+}
+
 // Serve static files from public directory
 app.use(express.static('public'));
 
@@ -48,6 +55,7 @@ app.get('/processes', async (req, res) => {
 // WebSocket endpoint
 app.ws('/ws', (ws, req) => {
     clients.add(ws);
+    console.log(`Client connected. Total clients: ${clients.size}`);
     
     ws.on('message', async (msg) => {
         const data = JSON.parse(msg);
@@ -67,6 +75,23 @@ app.ws('/ws', (ws, req) => {
 
     ws.on('close', () => {
         clients.delete(ws);
+        console.log(`Client disconnected. Total clients: ${clients.size}`);
+        
+        // If no clients are connected, stop all parsers
+        if (clients.size === 0) {
+            stopAllParsers();
+        }
+    });
+
+    // Handle errors to prevent crashes
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        clients.delete(ws);
+        
+        // If no clients are connected, stop all parsers
+        if (clients.size === 0) {
+            stopAllParsers();
+        }
     });
 });
 
@@ -79,7 +104,8 @@ app.listen(PORT, () => {
 // Broadcast connection updates to all connected clients
 const UPDATE_INTERVAL = process.env.UPDATE_INTERVAL || 1000;
 setInterval(() => {
-    if (currentParsers.size > 0) {
+    // Only process and send updates if there are clients connected
+    if (clients.size > 0 && currentParsers.size > 0) {
         // Combine connections from all parsers
         const allConnections = Array.from(currentParsers.values()).reduce((acc, parser) => {
             return acc.concat(parser.getConnections());
@@ -92,3 +118,16 @@ setInterval(() => {
         });
     }
 }, UPDATE_INTERVAL);
+
+// Handle process termination
+process.on('SIGINT', () => {
+    console.log('Shutting down...');
+    stopAllParsers();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Shutting down...');
+    stopAllParsers();
+    process.exit(0);
+});
