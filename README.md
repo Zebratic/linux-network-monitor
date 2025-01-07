@@ -17,6 +17,7 @@ A real-time network connection monitoring tool for Linux systems that allows you
 - Node.js (v14 or higher)
 - npm (Node Package Manager)
 - Root access (required for monitoring network connections)
+- `strace` installed
 
 ## Installation
 
