@@ -1,54 +1,62 @@
 import { exec } from 'child_process';
 
-class StraceParser {
-    constructor() {
-        this.connections = [];
-        this.currentStraceProcess = null;
+export default class StraceParser {
+    constructor(timeout = 5) {
+        this.connections = new Map();
+        this.process = null;
+        this.timeout = timeout * 1000; // Convert to milliseconds
+        this.cleanupInterval = null;
         this.monitoredPid = null;
     }
 
     // Function to start monitoring a process
     async startMonitoring(pid) {
+        console.log(`Starting monitoring for PID ${pid}`);
         this.monitoredPid = pid;
 
         // Stop any existing strace process
-        if (this.currentStraceProcess) {
-            this.currentStraceProcess.kill();
+        if (this.process) {
+            this.process.kill();
             console.log('Stopped the previous strace process.');
-            this.currentStraceProcess = null;
+            this.process = null;
         }
 
         // Clear existing connections when starting new monitor
-        this.clearConnections();
+        this.connections.clear();
 
         // Start the strace process
         this.startStraceProcess();
 
-        // remove stale connections every 1 second
-        setInterval(() => {
-            this.removeStaleConnections();
-        }, 1000);
+        // Start cleanup interval
+        this.cleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [key, conn] of this.connections.entries()) {
+                if (now - new Date(conn.lastSeen).getTime() > this.timeout) {
+                    this.connections.delete(key);
+                }
+            }
+        }, 1000); // Check every second
     }
 
     // Function to start the strace process
     startStraceProcess() {
-        this.currentStraceProcess = exec(`sudo strace -p ${this.monitoredPid} -f -e trace=network -s 1`);
+        this.process = exec(`sudo strace -p ${this.monitoredPid} -f -e trace=network -s 1`);
 
-        this.currentStraceProcess.stdout.on('data', async (data) => {
+        this.process.stdout.on('data', async (data) => {
             await this.parseOutput(data);
         });
 
-        this.currentStraceProcess.stderr.on('data', async (data) => {
+        this.process.stderr.on('data', async (data) => {
             await this.parseOutput(data);
         });
 
-        this.currentStraceProcess.on('close', (code) => {
+        this.process.on('close', (code) => {
             console.log(`Strace process exited with code ${code}`);
-            this.currentStraceProcess = null;
+            this.process = null;
             
             // Restart if process was killed unexpectedly
             if (code === null && this.monitoredPid) {
-                console.log(`Restarting strace for PID ${this.monitoredPid}`);
+                //console.log(`Restarting strace for PID ${this.monitoredPid}`);
                 this.startStraceProcess();
             }
         });
@@ -56,12 +64,17 @@ class StraceParser {
 
     // Function to stop monitoring
     stopMonitoring() {
-        if (this.currentStraceProcess) {
-            this.currentStraceProcess.kill();
-            this.currentStraceProcess = null;
+        if (this.process) {
+            this.process.kill();
+            this.process = null;
+            this.monitoredPid = null;
         }
-        this.monitoredPid = null;
-        this.clearConnections();
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+
+        this.connections.clear();
     }
 
     // Function to parse strace output
@@ -89,9 +102,10 @@ class StraceParser {
 
     // Function to add a connection to the list
     addConnection(pid, ip, port) {
-        const exists = this.connections.find(c => c.ip == ip && c.port == port);
+        const key = `${ip}:${port}`;
+        const existing = this.connections.get(key);
 
-        if (!exists) {
+        if (!existing) {
             const connection = {
                 pid: pid,
                 ip: ip,
@@ -99,37 +113,33 @@ class StraceParser {
                 lastSeen: new Date(),
                 packets: 1
             };
-            this.connections.push(connection);
+            this.connections.set(key, connection);
             console.log(`New connection: ${connection.ip}:${connection.port} (PID: ${connection.pid})`);
         } else {
-            exists.lastSeen = new Date();
-            exists.packets++;
+            existing.lastSeen = new Date();
+            existing.packets++;
+            this.connections.set(key, existing);
         }
     }
 
     // Function to get all connections
     getConnections() {
-        return this.connections;
-    }
-
-    // Function to clear connections
-    clearConnections() {
-        this.connections = [];
-    }
-
-    // Function to remove stale connections
-    removeStaleConnections(timeout = 5000) {
-        const now = new Date();
-        this.connections = this.connections.filter(conn => {
-            const age = now - conn.lastSeen;
-            return age <= timeout;
-        });
+        // Filter out old connections before returning
+        const now = Date.now();
+        for (const [key, conn] of this.connections.entries()) {
+            if (now - new Date(conn.lastSeen).getTime() > this.timeout) {
+                this.connections.delete(key);
+            }
+        }
+        return Array.from(this.connections.values());
     }
 
     // Function to get the current monitored PID
     getMonitoredPid() {
         return this.monitoredPid;
     }
-}
 
-export default StraceParser;
+    setTimeout(timeout) {
+        this.timeout = timeout * 1000; // Convert to milliseconds
+    }
+}

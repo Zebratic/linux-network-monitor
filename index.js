@@ -2,19 +2,32 @@ import straceParser from './strace-parser.js';
 import psList from 'ps-list';
 import express from 'express';
 import expressWs from 'express-ws';
-import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs/promises';
 
 const execAsync = promisify(exec);
 
-// Configure dotenv
+// Get directory paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-dotenv.config({ path: path.join(__dirname, '.env') });
+
+// Load config
+let config = {
+    port: 9000,
+    updateInterval: 1000,
+    connectionTimeout: 5
+};
+
+try {
+    const configFile = await fs.readFile(path.join(__dirname, 'config.json'), 'utf8');
+    config = JSON.parse(configFile);
+} catch (error) {
+    console.warn('Failed to load config.json, using default values:', error);
+}
 
 // Check if running as root
 if (process.getuid && process.getuid() !== 0) {
@@ -37,6 +50,7 @@ let currentParsers = new Map(); // Map to store multiple parsers
 // Function to stop all parsers and clear the map
 function stopAllParsers() {
     console.log('Stopping all strace processes - no clients connected');
+
     currentParsers.forEach(parser => parser.stopMonitoring());
     currentParsers.clear();
 }
@@ -85,6 +99,14 @@ app.use(express.static('public'));
 // Main route
 app.get('/', (req, res) => {
     res.render('layouts/main');
+});
+
+// Settings endpoint
+app.get('/settings', (req, res) => {
+    res.json({
+        updateInterval: config.updateInterval,
+        connectionTimeout: config.connectionTimeout
+    });
 });
 
 // API endpoint to get program icon
@@ -139,10 +161,40 @@ app.ws('/ws', (ws, req) => {
             
             // Start new parsers for each PID
             data.pids.forEach(pid => {
-                const parser = new straceParser();
+                const parser = new straceParser(config.connectionTimeout);
                 parser.startMonitoring(pid);
                 currentParsers.set(pid, parser);
             });
+        } else if (data.type === 'updateInterval') {
+            // Update the interval in config
+            config.updateInterval = data.interval;
+            // Save the new config
+            try {
+                await fs.writeFile(
+                    path.join(__dirname, 'config.json'),
+                    JSON.stringify({ ...config }, null, 4)
+                );
+            } catch (error) {
+                console.error('Failed to save config:', error);
+            }
+        } else if (data.type === 'connectionTimeout') {
+            // Update the timeout in config
+            config.connectionTimeout = data.timeout;
+            
+            // Update timeout for all existing parsers
+            currentParsers.forEach(parser => {
+                parser.setTimeout(data.timeout);
+            });
+            
+            // Save the new config
+            try {
+                await fs.writeFile(
+                    path.join(__dirname, 'config.json'),
+                    JSON.stringify({ ...config }, null, 4)
+                );
+            } catch (error) {
+                console.error('Failed to save config:', error);
+            }
         }
     });
 
@@ -162,6 +214,7 @@ app.ws('/ws', (ws, req) => {
         clients.delete(ws);
         
         // If no clients are connected, stop all parsers
+        console.log(clients.size);
         if (clients.size === 0) {
             stopAllParsers();
         }
@@ -169,16 +222,15 @@ app.ws('/ws', (ws, req) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 9000;
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+app.listen(config.port, () => {
+    console.log(`Server running on http://localhost:${config.port}`);
 });
 
 // Broadcast connection updates to all connected clients
-const UPDATE_INTERVAL = process.env.UPDATE_INTERVAL || 1000;
 setInterval(() => {
     // Only process and send updates if there are clients connected
     if (clients.size > 0 && currentParsers.size > 0) {
+
         // Combine connections from all parsers
         const allConnections = Array.from(currentParsers.values()).reduce((acc, parser) => {
             return acc.concat(parser.getConnections());
@@ -190,7 +242,7 @@ setInterval(() => {
             }
         });
     }
-}, UPDATE_INTERVAL);
+}, config.updateInterval);
 
 // Handle process termination
 process.on('SIGINT', () => {

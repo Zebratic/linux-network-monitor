@@ -1,0 +1,33 @@
+<div id="settings-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Settings</h2>
+            <button class="close-modal"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="setting-group">
+                <label for="updateInterval">Update Interval (ms)</label>
+                <div class="setting-control">
+                    <input type="number" id="updateInterval" min="100" max="10000" step="100">
+                    <button class="apply-interval">Apply</button>
+                </div>
+                <p class="setting-description">How frequently the connection data updates (100ms - 10000ms)</p>
+            </div>
+            <div class="setting-group">
+                <label for="connectionTimeout">Connection Timeout (seconds)</label>
+                <div class="setting-control">
+                    <input type="number" id="connectionTimeout" min="1" max="3600" step="1">
+                    <button class="apply-timeout">Apply</button>
+                </div>
+                <p class="setting-description">How long a connection can be inactive before being removed (1s - 1h)</p>
+            </div>
+            <div class="setting-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="showLocal" checked>
+                    Show Local Connections
+                </label>
+                <p class="setting-description">Show connections to localhost and local network addresses (127.0.0.1, 192.168.x.x, etc.)</p>
+            </div>
+        </div>
+    </div>
+</div> 

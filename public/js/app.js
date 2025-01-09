@@ -1,5 +1,10 @@
 $(document).ready(function() {
-    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    let ws;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    const reconnectDelay = 1000; // Start with 1 second delay
+    let selectedPids = []; // Store currently monitored PIDs
+    
     const $connectionsDiv = $('#connections');
     const $processListDiv = $('#processList');
     const $searchInput = $('#search');
@@ -12,9 +17,34 @@ $(document).ready(function() {
     let currentHighlightIndex = -1;
     let visibleProcesses = [];
 
-    function formatDate(dateString) {
+    // Add settings functionality
+    let updateInterval = 1000; // Default value, will be updated from server
+    let connectionTimeout = 5; // Default value in seconds, will be updated from server
+
+    // Add variable to store selected process name
+    let selectedProcessName = null;
+
+    function formatRelativeTime(dateString) {
         const date = new Date(dateString);
-        return date.toLocaleString();
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+
+        if (diffInSeconds < 3) {
+            return 'Now';
+        }
+        if (diffInSeconds < 60) {
+            return `${diffInSeconds} seconds ago`;
+        }
+        if (diffInSeconds < 3600) {
+            const minutes = Math.floor(diffInSeconds / 60);
+            return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+        }
+        if (diffInSeconds < 86400) {
+            const hours = Math.floor(diffInSeconds / 3600);
+            return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        }
+        const days = Math.floor(diffInSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''} ago`;
     }
 
     function getConnectionKey(conn) {
@@ -39,7 +69,12 @@ $(document).ready(function() {
 
     function createConnectionElement(conn) {
         const ipPort = `${conn.remoteAddress || conn.ip} ${conn.remotePort || conn.port}`;
-        return $(`
+        const now = new Date();
+        const lastSeen = new Date(conn.lastSeen);
+        const timeSinceLastSeen = (now - lastSeen) / 1000;
+        const timeoutPercentage = (timeSinceLastSeen / connectionTimeout) * 100;
+        
+        const $element = $(`
             <div class="table-row" data-key="${getConnectionKey(conn)}">
                 <div class="table-cell ip-cell selectable">
                     ${conn.remoteAddress || conn.ip}
@@ -50,8 +85,8 @@ $(document).ready(function() {
                 <div class="table-cell pid-cell selectable">
                     ${conn.pid}
                 </div>
-                <div class="table-cell time-cell">
-                    ${formatDate(conn.lastSeen)}
+                <div class="table-cell time-cell" data-timestamp="${conn.lastSeen}">
+                    ${formatRelativeTime(conn.lastSeen)}
                 </div>
                 <div class="table-cell packets-cell">
                     <span class="packet-count">${conn.packets}</span> packets
@@ -63,12 +98,38 @@ $(document).ready(function() {
                 </div>
             </div>
         `);
+        
+        // Set initial color based on time since last seen
+        const intensity = Math.min(timeoutPercentage * 0.2, 20); // Max 20% red tint
+        if (intensity > 0) {
+            $element.css('background-color', `rgba(255, 0, 0, ${intensity / 100})`);
+        }
+        
+        return $element;
     }
 
     function updateConnectionElement($element, conn) {
         // Only update the dynamic fields
-        $element.find('.time-cell').text(formatDate(conn.lastSeen));
+        const now = new Date();
+        const lastSeen = new Date(conn.lastSeen);
+        const timeSinceLastSeen = (now - lastSeen) / 1000; // Convert to seconds
+        const timeoutPercentage = (timeSinceLastSeen / connectionTimeout) * 100;
+        
+        // Update the time cell
+        $element.find('.time-cell')
+            .attr('data-timestamp', conn.lastSeen)
+            .text(formatRelativeTime(conn.lastSeen));
+        
+        // Update packets count
         $element.find('.packet-count').text(conn.packets);
+        
+        // Update the row color based on time since last seen
+        const intensity = Math.min(timeoutPercentage * 0.2, 20); // Max 20% red tint
+        if (intensity > 0) {
+            $element.css('background-color', `rgba(255, 0, 0, ${intensity / 100})`);
+        } else {
+            $element.css('background-color', '');
+        }
     }
 
     async function fetchProcesses() {
@@ -80,7 +141,7 @@ $(document).ready(function() {
             console.error('Error fetching processes:', error);
         }
     }
-
+    
     function displayProcesses(processesToShow) {
         $processListDiv.empty();
         visibleProcesses = processesToShow.sort((a, b) => a.name.localeCompare(b.name));
@@ -144,6 +205,7 @@ $(document).ready(function() {
     }
 
     function selectProcess(proc) {
+        selectedProcessName = proc.name;  // Store the selected process name
         $processListDiv.find('.process-item').removeClass('selected');
         $processListDiv.find(`.process-item[data-name="${proc.name}"]`).addClass('selected');
         
@@ -154,6 +216,9 @@ $(document).ready(function() {
             onerror: "this.src='/program-icon/default'"
         });
         
+        // Update search input with process name
+        $searchInput.val(proc.name);
+        
         // Update process info
         updateProcessInfo(proc);
         
@@ -161,11 +226,16 @@ $(document).ready(function() {
         connectionElements.clear();
         $connectionsDiv.empty();
         
+        // Store selected PIDs
+        selectedPids = proc.pids;
+        
         // Start monitoring
-        ws.send(JSON.stringify({
-            type: 'monitor',
-            pids: proc.pids
-        }));
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'monitor',
+                pids: selectedPids
+            }));
+        }
     }
 
     function highlightProcess(index) {
@@ -319,21 +389,72 @@ $(document).ready(function() {
 
     $showLocalCheckbox.on('change', updateConnectionsDisplay);
 
-    ws.onmessage = (event) => {
-        allConnections = JSON.parse(event.data);
-        updateConnectionsDisplay();
-    };
+    function connectWebSocket() {
+        ws = new WebSocket(`ws://${window.location.host}/ws`);
 
-    ws.onclose = () => {
-        console.log('WebSocket connection closed');
-        $('#processInfo').hide();
-        $processListDiv.empty();
-        processes = [];
-        displayProcesses(processes);
-        $connectionsDiv.html('<div class="no-connections">WebSocket connection closed</div>');
-    };
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            reconnectAttempts = 0;
+            $connectionsDiv.find('.no-connections').remove();
+            
+            // Fetch processes when connected
+            fetchProcesses().then(() => {
+                // After processes are fetched, restore the selected process if any
+                if (selectedProcessName) {
+                    const proc = processes.find(p => p.name === selectedProcessName);
+                    if (proc) {
+                        selectProcess(proc);
+                    }
+                }
+            });
+        };
 
-    fetchProcesses();
+        ws.onmessage = (event) => {
+            allConnections = JSON.parse(event.data);
+            updateConnectionsDisplay();
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket connection closed');
+            
+            // Show disconnected message but keep the process info visible
+            $connectionsDiv.html('<div class="no-connections">Connection lost. Attempting to reconnect...</div>');
+            
+            // Attempt to reconnect
+            if (reconnectAttempts < maxReconnectAttempts) {
+                const delay = reconnectDelay * Math.pow(2, reconnectAttempts);
+                console.log(`Reconnecting in ${delay}ms... (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+                
+                setTimeout(() => {
+                    reconnectAttempts++;
+                    connectWebSocket();
+                }, delay);
+            } else {
+                $connectionsDiv.html('<div class="no-connections">Connection failed. Please refresh the page to try again.</div>');
+            }
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+    }
+
+    // Remove the duplicate click handler and merge it with the existing selectProcess function
+    $(document).on('click', '.process-item', function() {
+        const processName = $(this).data('name');
+        const proc = processes.find(p => p.name === processName);
+        if (proc) {
+            selectProcess(proc);
+            // Close the process list
+            $('#processes').removeClass('expanded');
+            $searchInput.blur();
+            // Update search input
+            $searchInput.val(processName);
+        }
+    });
+
+    // Initial connection
+    connectWebSocket();
 
     // Add copy functionality
     $(document).on('click', '.copy-button', function() {
@@ -360,24 +481,6 @@ $(document).ready(function() {
             display.html('<span>No process selected</span>');
         }
     }
-
-    // Update your existing process click handler
-    $(document).on('click', '.process-item', function() {
-        $('.process-item').removeClass('selected');
-        $(this).addClass('selected');
-        
-        const processId = $(this).data('id');
-        const processName = $(this).find('.process-name').text();
-        const processIcon = $(this).find('.process-icon').attr('src');
-
-        // autocompleted search
-        $searchInput.val(processName);
-        
-        updateSelectedProcessDisplay({
-            name: processName,
-            icon: processIcon
-        });
-    });
 
     // Add this to your initialization code
     $(document).ready(function() {
@@ -413,4 +516,83 @@ $(document).ready(function() {
             highlightProcess(currentHighlightIndex);
         }
     });
+
+    // Settings modal handlers
+    $('.settings-button').on('click', function() {
+        $('#settings-modal').addClass('show');
+        $('#updateInterval').val(updateInterval);
+    });
+
+    // Close modal when clicking backdrop or close button
+    $('.close-modal, .modal').on('click', function(e) {
+        if (e.target === this || $(this).hasClass('close-modal') || $(this).closest('.close-modal').length) {
+            $('#settings-modal').removeClass('show');
+        }
+    });
+
+    // Prevent modal content clicks from closing the modal
+    $('.modal-content').on('click', function(e) {
+        if (!$(e.target).hasClass('close-modal') && !$(e.target).closest('.close-modal').length) {
+            e.stopPropagation();
+        }
+    });
+
+    // Handle update interval changes
+    $('.apply-interval').on('click', function() {
+        const newInterval = parseInt($('#updateInterval').val());
+        if (newInterval >= 100 && newInterval <= 10000) {
+            updateInterval = newInterval;
+            ws.send(JSON.stringify({
+                type: 'updateInterval',
+                interval: newInterval
+            }));
+            // Show success feedback
+            const $button = $(this);
+            const oldText = $button.text();
+            $button.text('Applied!');
+            setTimeout(() => {
+                $button.text(oldText);
+            }, 1000);
+        }
+    });
+
+    // Handle connection timeout changes
+    $('.apply-timeout').on('click', function() {
+        const newTimeout = parseInt($('#connectionTimeout').val());
+        if (newTimeout >= 1 && newTimeout <= 3600) {
+            connectionTimeout = newTimeout;
+            ws.send(JSON.stringify({
+                type: 'connectionTimeout',
+                timeout: newTimeout
+            }));
+            // Show success feedback
+            const $button = $(this);
+            const oldText = $button.text();
+            $button.text('Applied!');
+            setTimeout(() => {
+                $button.text(oldText);
+            }, 1000);
+        }
+    });
+
+    // Get initial settings from server
+    fetch('/settings')
+        .then(response => response.json())
+        .then(settings => {
+            updateInterval = settings.updateInterval;
+            connectionTimeout = settings.connectionTimeout;
+            $('#updateInterval').val(updateInterval);
+            $('#connectionTimeout').val(connectionTimeout);
+        })
+        .catch(error => console.error('Error fetching settings:', error));
+
+    // Add a timer to update relative times
+    setInterval(() => {
+        $('.time-cell').each(function() {
+            const timestamp = $(this).attr('data-timestamp');
+            if (timestamp) {
+                $(this).text(formatRelativeTime(timestamp));
+            }
+        });
+    }, 1000);
 });

@@ -1,0 +1,5 @@
+{
+    "port": 9000,
+    "updateInterval": 1000,
+    "connectionTimeout": 5
+}
