@@ -110,10 +110,16 @@ app.get('/processes', async (req, res) => {
         if (!acc[proc.name]) {
             acc[proc.name] = {
                 name: proc.name,
-                pids: []
+                pids: [],
+                cmd: proc.cmd,
+                user: proc.uid || 'unknown',
+                cpu: 0,
+                memory: 0
             };
         }
         acc[proc.name].pids.push(proc.pid);
+        acc[proc.name].cpu += proc.cpu || 0;
+        acc[proc.name].memory += proc.memory || 0;
         return acc;
     }, {});
     res.json(Object.values(groupedProcesses));
