@@ -12,6 +12,7 @@ $(document).ready(function() {
     let processes = [];
     let connectionElements = new Map();
     let allConnections = [];
+    let copyFormat = "{IP}:{PORT}"; // Default copy format
 
     // Add keyboard navigation variables
     let currentHighlightIndex = -1;
@@ -68,7 +69,6 @@ $(document).ready(function() {
     }
 
     function createConnectionElement(conn) {
-        const ipPort = `${conn.remoteAddress || conn.ip} ${conn.remotePort || conn.port}`;
         const now = new Date();
         const lastSeen = new Date(conn.lastSeen);
         const timeSinceLastSeen = (now - lastSeen) / 1000;
@@ -92,7 +92,7 @@ $(document).ready(function() {
                     <span class="packet-count">${conn.packets}</span> packets
                 </div>
                 <div class="table-cell actions-cell">
-                    <button class="copy-button" data-value="${ipPort}" title="Copy IP:Port">
+                    <button class="copy-button" title="Copy: ${copyFormat}">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
@@ -104,8 +104,49 @@ $(document).ready(function() {
         if (intensity > 0) {
             $element.css('background-color', `rgba(255, 0, 0, ${intensity / 100})`);
         }
+
+        // Add click handler for copy button
+        $element.find('.copy-button').on('click', function() {
+            const textToCopy = copyFormat
+                .replace(/{IP}/g, conn.remoteAddress || conn.ip)
+                .replace(/{PORT}/g, conn.remotePort || conn.port)
+                .replace(/{PID}/g, conn.pid)
+                .replace(/{PROGRAM}/g, selectedProcessName || '');
+
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                // Show success feedback with the copied text
+                const $button = $(this);
+                const $icon = $button.find('i');
+                $button.attr('title', `Copied: ${textToCopy}`);
+                $icon.removeClass('fa-copy').addClass('fa-check');
+                
+                setTimeout(() => {
+                    $icon.removeClass('fa-check').addClass('fa-copy');
+                    $button.attr('title', `Copy: ${copyFormat}`);
+                }, 1000);
+            }).catch(() => {
+                // Show error feedback
+                const $button = $(this);
+                const $icon = $button.find('i');
+                $button.attr('title', 'Failed to copy');
+                $icon.removeClass('fa-copy').addClass('fa-times');
+                
+                setTimeout(() => {
+                    $icon.removeClass('fa-times').addClass('fa-copy');
+                    $button.attr('title', `Copy: ${copyFormat}`);
+                }, 1000);
+            });
+        });
         
         return $element;
+    }
+
+    function formatCopyText(conn) {
+        return copyFormat
+            .replace(/{IP}/g, conn.remoteAddress || conn.ip)
+            .replace(/{PORT}/g, conn.remotePort || conn.port)
+            .replace(/{PID}/g, conn.pid)
+            .replace(/{PROGRAM}/g, selectedProcessName || '');
     }
 
     function updateConnectionElement($element, conn) {
@@ -206,6 +247,9 @@ $(document).ready(function() {
 
     function selectProcess(proc) {
         selectedProcessName = proc.name;  // Store the selected process name
+        // Save to localStorage
+        localStorage.setItem('selectedProcessName', proc.name);
+        
         $processListDiv.find('.process-item').removeClass('selected');
         $processListDiv.find(`.process-item[data-name="${proc.name}"]`).addClass('selected');
         
@@ -400,10 +444,14 @@ $(document).ready(function() {
             // Fetch processes when connected
             fetchProcesses().then(() => {
                 // After processes are fetched, restore the selected process if any
-                if (selectedProcessName) {
-                    const proc = processes.find(p => p.name === selectedProcessName);
+                const savedProcessName = localStorage.getItem('selectedProcessName');
+                if (savedProcessName) {
+                    const proc = processes.find(p => p.name === savedProcessName);
                     if (proc) {
                         selectProcess(proc);
+                    } else {
+                        // If the process no longer exists, clear the saved selection
+                        localStorage.removeItem('selectedProcessName');
                     }
                 }
             });
@@ -458,16 +506,15 @@ $(document).ready(function() {
 
     // Add copy functionality
     $(document).on('click', '.copy-button', function() {
-        const textToCopy = $(this).data('value');
+        const conn = JSON.parse($(this).data('connection'));
+        const textToCopy = formatCopyText(conn);
         navigator.clipboard.writeText(textToCopy).then(() => {
-            let oldContent = $(this).html();
+            // Show a brief success indicator
             const $button = $(this);
-            $button.html('<i class="fas fa-check"></i>');
+            $button.find('i').removeClass('fa-copy').addClass('fa-check');
             setTimeout(() => {
-                $button.html(oldContent);
+                $button.find('i').removeClass('fa-check').addClass('fa-copy');
             }, 1000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
         });
     });
 
@@ -488,6 +535,18 @@ $(document).ready(function() {
         updateSelectedProcessDisplay(null); // Initialize with no selection
         $('.selected-process-icon').on('error', function() {
             $(this).attr('src', '/program-icon/default');
+        });
+        
+        // Fetch processes and restore selected process
+        fetchProcesses().then(() => {
+            // After processes are fetched, try to restore the selected process
+            const savedProcessName = localStorage.getItem('selectedProcessName');
+            if (savedProcessName) {
+                const proc = processes.find(p => p.name === savedProcessName);
+                if (proc) {
+                    selectProcess(proc);
+                }
+            }
         });
     });
 
@@ -581,10 +640,45 @@ $(document).ready(function() {
         .then(settings => {
             updateInterval = settings.updateInterval;
             connectionTimeout = settings.connectionTimeout;
+            copyFormat = settings.copyFormat || "{IP}:{PORT}";
             $('#updateInterval').val(updateInterval);
             $('#connectionTimeout').val(connectionTimeout);
+            $('#copyFormat').val(copyFormat);
         })
         .catch(error => console.error('Error fetching settings:', error));
+
+    // Add settings handlers
+    $('.apply-format').click(function() {
+        const newFormat = $('#copyFormat').val().trim();
+        if (newFormat) {
+            copyFormat = newFormat;
+            
+            // Save to server
+            fetch('/settings/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ copyFormat: copyFormat })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success indicator
+                    const $button = $(this);
+                    $button.text('✓');
+                    setTimeout(() => {
+                        $button.text('Apply');
+                    }, 1000);
+                } else {
+                    alert('Failed to save copy format');
+                }
+            })
+            .catch(() => {
+                alert('Failed to save copy format');
+            });
+        }
+    });
 
     // Add a timer to update relative times
     setInterval(() => {

@@ -19,12 +19,13 @@ const __dirname = dirname(__filename);
 let config = {
     port: 9000,
     updateInterval: 1000,
-    connectionTimeout: 5
+    connectionTimeout: 5,
+    copyFormat: "{IP}:{PORT}"
 };
 
 try {
     const configFile = await fs.readFile(path.join(__dirname, 'config.json'), 'utf8');
-    config = JSON.parse(configFile);
+    config = { ...config, ...JSON.parse(configFile) };
 } catch (error) {
     console.warn('Failed to load config.json, using default values:', error);
 }
@@ -95,6 +96,7 @@ async function findProgramIcon(programName) {
 
 // Serve static files from public directory
 app.use(express.static('public'));
+app.use(express.json());
 
 // Main route
 app.get('/', (req, res) => {
@@ -105,8 +107,28 @@ app.get('/', (req, res) => {
 app.get('/settings', (req, res) => {
     res.json({
         updateInterval: config.updateInterval,
-        connectionTimeout: config.connectionTimeout
+        connectionTimeout: config.connectionTimeout,
+        copyFormat: config.copyFormat
     });
+});
+
+// Settings update endpoint
+app.post('/settings/update', async (req, res) => {
+    try {
+        if (req.body.copyFormat !== undefined) {
+            config.copyFormat = req.body.copyFormat;
+            await fs.writeFile(
+                path.join(__dirname, 'config.json'),
+                JSON.stringify(config, null, 4)
+            );
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ error: 'Invalid settings update' });
+        }
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
 });
 
 // API endpoint to get program icon

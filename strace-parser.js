@@ -51,7 +51,7 @@ export default class StraceParser {
         });
 
         this.process.on('close', (code) => {
-            console.log(`Strace process exited with code ${code}`);
+            //console.log(`Strace process exited with code ${code}`);
             this.process = null;
             
             // Restart if process was killed unexpectedly
