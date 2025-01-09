@@ -134,6 +134,7 @@ app.get('/', (req, res) => {
 // Settings endpoint
 app.get('/settings', (req, res) => {
     res.json({
+        port: config.port,
         updateInterval: config.updateInterval,
         connectionTimeout: config.connectionTimeout,
         copyFormat: config.copyFormat,
@@ -188,9 +189,15 @@ app.get('/processes', async (req, res) => {
 app.post('/settings/update', async (req, res) => {
     try {
         let hasUpdates = false;
+        let needsRestart = false;
         const updates = {};
 
         // Handle all possible settings updates
+        if (req.body.port !== undefined) {
+            updates.port = req.body.port;
+            hasUpdates = true;
+            needsRestart = true;
+        }
         if (req.body.copyFormat !== undefined) {
             updates.copyFormat = req.body.copyFormat;
             hasUpdates = true;
@@ -237,6 +244,15 @@ app.post('/settings/update', async (req, res) => {
             const saved = await saveConfig();
             if (saved) {
                 res.json({ success: true });
+                
+                // If port changed, restart the server
+                if (needsRestart) {
+                    console.log(`Port changed to ${config.port}, restarting server...`);
+                    // Give time for the response to be sent
+                    setTimeout(() => {
+                        process.exit(0); // systemd will restart the service
+                    }, 1000);
+                }
             } else {
                 res.status(500).json({ error: 'Failed to save settings' });
             }

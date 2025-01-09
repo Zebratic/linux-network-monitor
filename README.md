@@ -25,6 +25,25 @@ A real-time network connection monitoring tool for Linux with a modern web inter
 
 ## Installation
 
+### Quick Install (Recommended)
+
+Install with a single command:
+```bash
+curl -sSL https://raw.githubusercontent.com/zebratic/linux-network-monitor/main/install.sh | sudo bash
+```
+
+This will automatically:
+- Clone the repository
+- Install dependencies
+- Set up the systemd service
+- Start the application
+
+After installation, the monitor will be available at `http://localhost:9000`
+
+### Manual Installation
+
+If you prefer to install manually:
+
 1. Clone the repository:
 ```bash
 git clone https://github.com/zebratic/linux-network-monitor.git
@@ -43,6 +62,8 @@ cp config.example.json config.json
 
 ## Usage
 
+### Method 1: Run Directly
+
 1. Start the server (requires root privileges):
 ```bash
 sudo node index.js
@@ -51,6 +72,42 @@ sudo node index.js
 2. Open your web browser and navigate to:
 ```
 http://localhost:9000
+```
+
+### Method 2: Install as System Service
+
+1. Run the installation script (requires root privileges):
+```bash
+sudo chmod +x install.sh
+sudo ./install.sh
+```
+
+This will:
+- Install the application to `/opt/linux-network-monitor`
+- Create and enable a systemd service
+- Start the service automatically
+
+The service will:
+- Start automatically on system boot
+- Restart automatically if it crashes
+- Log to the system journal
+
+You can manage the service with standard systemd commands:
+```bash
+# Start the service
+sudo systemctl start linux-network-monitor
+
+# Stop the service
+sudo systemctl stop linux-network-monitor
+
+# Restart the service
+sudo systemctl restart linux-network-monitor
+
+# View service status
+sudo systemctl status linux-network-monitor
+
+# View logs
+sudo journalctl -u linux-network-monitor -f
 ```
 
 ## Configuration

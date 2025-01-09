@@ -612,6 +612,7 @@ $(document).ready(function() {
     $('.settings-button').on('click', function() {
         $('#settings-modal').addClass('show');
         // Load current settings into form
+        $('#port').val(settings.port);
         $('#updateInterval').val(settings.updateInterval);
         $('#connectionTimeout').val(settings.connectionTimeout);
         $('#copyFormat').val(settings.copyFormat);
@@ -636,6 +637,7 @@ $(document).ready(function() {
     $('.save-settings').on('click', async function() {
         const $button = $(this);
         const newSettings = {
+            port: parseInt($('#port').val()),
             updateInterval: parseInt($('#updateInterval').val()),
             connectionTimeout: parseInt($('#connectionTimeout').val()),
             copyFormat: $('#copyFormat').val(),
@@ -645,6 +647,10 @@ $(document).ready(function() {
         };
 
         // Validate settings
+        if (newSettings.port < 1 || newSettings.port > 65535) {
+            alert('Port must be between 1 and 65535');
+            return;
+        }
         if (newSettings.updateInterval < 100 || newSettings.updateInterval > 10000) {
             alert('Update interval must be between 100ms and 10000ms');
             return;
@@ -673,6 +679,22 @@ $(document).ready(function() {
             const result = await response.json();
 
             if (result.success) {
+                // Check if port changed
+                if (newSettings.port !== settings.port) {
+                    // Show success message with redirect info
+                    $button.text('Redirecting...').addClass('success');
+                    // Wait a moment for the server to restart
+                    setTimeout(() => {
+                        // Redirect to new port
+                        const newUrl = window.location.href.replace(
+                            `:${settings.port}`,
+                            `:${newSettings.port}`
+                        );
+                        window.location.href = newUrl;
+                    }, 2000);
+                    return;
+                }
+
                 // Update local settings
                 Object.assign(settings, newSettings);
                 updateInterval = newSettings.updateInterval;
@@ -710,6 +732,7 @@ $(document).ready(function() {
             copyFormat = settings.copyFormat || "{IP}:{PORT}";
             
             // Initialize form with current settings
+            $('#port').val(settings.port);
             $('#updateInterval').val(updateInterval);
             $('#connectionTimeout').val(connectionTimeout);
             $('#copyFormat').val(copyFormat);

@@ -6,6 +6,13 @@
         </div>
         <div class="modal-body">
             <div class="setting-group">
+                <label for="port">Server Port</label>
+                <div class="setting-control">
+                    <input type="number" id="port" min="1" max="65535" step="1">
+                </div>
+                <p class="setting-description">The port the server listens on</p>
+            </div>
+            <div class="setting-group">
                 <label for="updateInterval">Update Interval (ms)</label>
                 <div class="setting-control">
                     <input type="number" id="updateInterval" min="100" max="10000" step="100">

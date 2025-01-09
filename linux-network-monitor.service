@@ -1,0 +1,17 @@
+[Unit]
+Description=Linux Network Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/linux-network-monitor
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=linux-network-monitor
+
+[Install]
+WantedBy=multi-user.target 
