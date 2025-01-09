@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Configure dotenv
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +26,10 @@ if (process.getuid && process.getuid() !== 0) {
 const app = express();
 const wsInstance = expressWs(app);
 
+// Set up EJS as the view engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 // Track all connected websocket clients
 const clients = new Set();
 let currentParsers = new Map(); // Map to store multiple parsers
@@ -33,8 +41,67 @@ function stopAllParsers() {
     currentParsers.clear();
 }
 
+// Cache for program icons
+const iconCache = new Map();
+
+// Function to find program icon
+async function findProgramIcon(programName) {
+    if (iconCache.has(programName)) {
+        return iconCache.get(programName);
+    }
+
+    try {
+        // Common icon locations
+        const iconLocations = [
+            '/usr/share/icons',
+            '/usr/share/pixmaps',
+            '/usr/local/share/icons',
+            '~/.local/share/icons'
+        ];
+
+        // Search for icons in common locations
+        for (const location of iconLocations) {
+            const { stdout } = await execAsync(`find ${location} -iname "*${programName}*.png" -o -iname "*${programName}*.svg" 2>/dev/null | head -n 1`);
+            if (stdout.trim()) {
+                iconCache.set(programName, stdout.trim());
+                return stdout.trim();
+            }
+        }
+
+        // If no specific icon found, try to find a generic application icon
+        const { stdout } = await execAsync('find /usr/share/icons -name "application-x-executable.png" 2>/dev/null | head -n 1');
+        const defaultIcon = stdout.trim() || '/usr/share/icons/hicolor/48x48/apps/application-x-executable.png';
+        iconCache.set(programName, defaultIcon);
+        return defaultIcon;
+    } catch (error) {
+        console.error('Error finding icon:', error);
+        return null;
+    }
+}
+
 // Serve static files from public directory
 app.use(express.static('public'));
+
+// Main route
+app.get('/', (req, res) => {
+    res.render('layouts/main');
+});
+
+// API endpoint to get program icon
+app.get('/program-icon/:name', async (req, res) => {
+    const programName = req.params.name;
+    try {
+        const iconPath = await findProgramIcon(programName);
+        if (iconPath) {
+            res.sendFile(iconPath);
+        } else {
+            res.status(404).send('Icon not found');
+        }
+    } catch (error) {
+        console.error('Error serving icon:', error);
+        res.status(500).send('Error serving icon');
+    }
+});
 
 // API endpoint to get list of processes grouped by name
 app.get('/processes', async (req, res) => {
