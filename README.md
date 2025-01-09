@@ -1,22 +1,26 @@
-# Linux Network Connection Monitor
+# Linux Network Monitor
 
-A real-time network connection monitoring tool for Linux systems that allows you to track and visualize network connections for specific processes. The tool provides a web interface to select and monitor processes, displaying their active network connections with live updates.
+A real-time network connection monitoring tool for Linux with a modern web interface. Monitor network connections of specific processes with detailed IP information and VPN detection.
+
+![Linux Network Monitor](screenshot.png)
 
 ## Features
 
-- Real-time connection monitoring
-- Process grouping and filtering
-- Dark mode UI
-- Live updates without page refresh
-- Easy-to-use web interface
-- Copy IP:Port functionality
+- 🔍 Real-time connection monitoring
+- 🚀 Process-specific network tracking
+- 🌍 IP geolocation and VPN detection (via ProxyCheck.io)
+- 📊 Connection statistics and packet counting
+- 🎨 Modern, responsive web interface
+- ⚡ Fast and lightweight
+- 🔄 Auto-reconnection and persistent settings
+- 📋 Customizable copy formats
 
-## Prerequisites
+## Requirements
 
 - Linux operating system
-- Node.js (v14 or higher)
-- npm (Node Package Manager)
-- Root access (required for monitoring network connections)
+- Node.js 16 or higher
+- Root privileges (for strace functionality)
+- Around 100MB of available RAM
 - `strace` installed
 
 ## Installation
@@ -32,67 +36,111 @@ cd linux-network-monitor
 npm install
 ```
 
-## Configuration
-
-The application uses a `.env` file for configuration. Create or modify the `.env` file in the project root:
-
-```env
-PORT=9000
-UPDATE_INTERVAL=250
+3. Create a configuration file (optional):
+```bash
+cp config.example.json config.json
 ```
 
-Configuration options:
-- `PORT`: The port number for the web server (default: 9000)
-- `UPDATE_INTERVAL`: Update frequency in milliseconds (default: 250)
+## Usage
 
-## Running the Application
-
-The application requires root privileges to monitor network connections. Run it using:
-
+1. Start the server (requires root privileges):
 ```bash
 sudo node index.js
 ```
 
-Once started:
-1. Open your web browser and navigate to `http://localhost:9000` (or your configured port)
-2. Use the search box to find specific processes
-3. Click on a process to start monitoring its network connections
-4. The connections will be displayed in real-time with details such as:
-   - IP address and port
-   - Process ID
-   - Last seen timestamp
-   - Packet count
+2. Open your web browser and navigate to:
+```
+http://localhost:9000
+```
 
-## Usage Tips
+## Configuration
 
-1. **Process Selection**:
-   - Processes are grouped by name
-   - Each process group shows the number of instances
-   - Selecting a process group monitors all instances
+The application can be configured through the web interface or by editing `config.json`:
 
-2. **Connection Details**:
-   - Hover over connection cards to see the copy button
-   - Click the copy button to copy the IP:Port combination
-   - Connection information updates in real-time
+```json
+{
+    "port": 9000,
+    "updateInterval": 1000,
+    "connectionTimeout": 5,
+    "copyFormat": "{IP}:{PORT}",
+    "proxyCheckApiKey": "",
+    "enableProxyCheck": false,
+    "showLocalConnections": true
+}
+```
 
-3. **Search Functionality**:
-   - Use the search box to filter processes by name
-   - Search is case-insensitive
+### Configuration Options
 
-## Security Note
+- `port`: Web server port (default: 9000)
+- `updateInterval`: Connection update frequency in milliseconds (100-10000)
+- `connectionTimeout`: Time before inactive connections are removed in seconds (1-3600)
+- `copyFormat`: Format for copying connection details. Available variables:
+  - `{IP}`: Remote IP address
+  - `{PORT}`: Remote port
+  - `{PID}`: Process ID
+  - `{PROGRAM}`: Program name
+- `proxyCheckApiKey`: API key for ProxyCheck.io service (optional)
+- `enableProxyCheck`: Enable/disable IP information lookup
+- `showLocalConnections`: Show/hide local network connections
 
-This tool requires root privileges to function properly as it needs access to system-level network information. Always be cautious when running applications with root privileges and ensure you trust the source code.
+## Features in Detail
 
-## Troubleshooting
+### Process Selection
+- Search for processes by name
+- View process details including PIDs, user, and memory usage
+- Monitor multiple instances of the same process
 
-1. **"This program must be run as root" error**:
-   - Run the application with sudo
-   - Ensure you have root privileges
+### Connection Monitoring
+- Real-time connection tracking
+- Connection duration tracking
+- Packet counting
+- Local connection filtering
+- Copy connection details in custom formats
 
-2. **No processes showing**:
-   - Verify the application is running with root privileges
-   - Check if ps-list is working properly
+### IP Information (with ProxyCheck.io)
+- VPN/Proxy detection
+- Geographic location
+- ASN information
+- Provider details
+- Connection type identification
 
-3. **No connections showing**:
-   - Ensure the selected process has active network connections
-   - Verify the UPDATE_INTERVAL in .env isn't too long
+### User Interface
+- Dark/light theme support
+- Responsive design
+- Keyboard navigation
+- Persistent settings
+- Auto-reconnection
+
+## Development
+
+The project structure:
+```
+├── index.js              # Main server file
+├── strace-parser.js      # strace output parser
+├── proxycheck-service.js # IP information service
+├── config.json          # Configuration file
+├── public/              # Static files
+│   ├── css/            # Stylesheets
+│   └── js/             # Client-side JavaScript
+└── views/              # EJS templates
+    ├── layouts/        # Page layouts
+    └── partials/       # Reusable components
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [ProxyCheck.io](https://proxycheck.io/) for IP information services
+- [Font Awesome](https://fontawesome.com/) for icons
+- [Express](https://expressjs.com/) for the web framework

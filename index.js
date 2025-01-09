@@ -30,15 +30,6 @@ let config = {
 // Function to safely save config
 async function saveConfig() {
     try {
-        // Create a backup of the current config file if it exists
-        try {
-            const currentConfig = await fs.readFile(path.join(__dirname, 'config.json'), 'utf8');
-            await fs.writeFile(path.join(__dirname, 'config.json.backup'), currentConfig);
-        } catch (error) {
-            // Ignore if backup fails (e.g., first time running)
-        }
-
-        // Write the new config
         await fs.writeFile(
             path.join(__dirname, 'config.json'),
             JSON.stringify(config, null, 4)
@@ -46,13 +37,10 @@ async function saveConfig() {
         return true;
     } catch (error) {
         console.error('Failed to save config:', error);
-        // Try to restore from backup if save failed
         try {
-            const backup = await fs.readFile(path.join(__dirname, 'config.json.backup'), 'utf8');
-            await fs.writeFile(path.join(__dirname, 'config.json'), backup);
-            config = JSON.parse(backup); // Restore config object
-        } catch (restoreError) {
-            console.error('Failed to restore config backup:', restoreError);
+            await fs.writeFile(path.join(__dirname, 'config.json'), JSON.stringify(config, null, 4));
+        } catch (error) {
+            console.error('Failed to write default config:', error);
         }
         return false;
     }
