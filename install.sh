@@ -100,6 +100,9 @@ echo ""
 echo "Installation complete!"
 echo "The service should be running on http://localhost:9000"
 echo ""
+echo "Opening the default browser..."
+xdg-open http://localhost:9000 &
+
 echo "Configuration file location:"
 echo "  $INSTALL_DIR/config.json"
 echo ""
