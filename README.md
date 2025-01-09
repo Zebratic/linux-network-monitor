@@ -92,10 +92,10 @@ The application can be configured through the web interface or by editing `confi
 
 ### Connection Monitoring
 - Real-time connection tracking
-- Connection duration tracking
+- Connection timeout filtering
 - Packet counting
-- Local connection filtering
-- Copy connection details in custom formats
+- Local address filtering
+- Copy connection details with custom formats
 
 ### IP Information (with ProxyCheck.io)
 - VPN/Proxy detection
@@ -105,7 +105,6 @@ The application can be configured through the web interface or by editing `confi
 - Connection type identification
 
 ### User Interface
-- Dark/light theme support
 - Responsive design
 - Keyboard navigation
 - Persistent settings
