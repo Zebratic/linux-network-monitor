@@ -9,7 +9,6 @@
                 <label for="updateInterval">Update Interval (ms)</label>
                 <div class="setting-control">
                     <input type="number" id="updateInterval" min="100" max="10000" step="100">
-                    <button class="apply-interval">Apply</button>
                 </div>
                 <p class="setting-description">How frequently the connection data updates (100ms - 10000ms)</p>
             </div>
@@ -17,7 +16,6 @@
                 <label for="connectionTimeout">Connection Timeout (seconds)</label>
                 <div class="setting-control">
                     <input type="number" id="connectionTimeout" min="1" max="3600" step="1">
-                    <button class="apply-timeout">Apply</button>
                 </div>
                 <p class="setting-description">How long a connection can be inactive before being removed (1 - 3600 seconds)</p>
             </div>
@@ -25,7 +23,6 @@
                 <label for="copyFormat">Copy Format</label>
                 <div class="setting-control">
                     <input type="text" id="copyFormat" placeholder="{IP}:{PORT}">
-                    <button class="apply-format">Apply</button>
                 </div>
                 <p class="setting-description">Custom format for copying connection details. Available variables: {IP}, {PORT}, {PID}, {PROGRAM}</p>
             </div>
@@ -35,6 +32,23 @@
                     Show Local Connections
                 </label>
                 <p class="setting-description">Show connections to localhost and local network addresses (127.0.0.1, 192.168.x.x, etc.)</p>
+            </div>
+            <div class="setting-group">
+                <label for="proxyCheckApiKey">ProxyCheck API Key <i>(optional)</i></label>
+                <div class="setting-control">
+                    <input type="text" id="proxyCheckApiKey" placeholder="Enter your API key">
+                </div>
+                <p class="setting-description">API key for <a href="https://proxycheck.io" target="_blank" style="color: var(--highlight);">ProxyCheck.io</a> IP lookup service</p>
+            </div>
+            <div class="setting-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="enableProxyCheck">
+                    Enable ProxyCheck IP Lookup
+                </label>
+                <p class="setting-description">Show additional IP information using ProxyCheck.io API (VPN detection, location, etc.)</p>
+            </div>
+            <div class="settings-footer">
+                <button class="save-settings">Save Settings</button>
             </div>
         </div>
     </div>

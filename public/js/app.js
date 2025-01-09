@@ -21,6 +21,14 @@ $(document).ready(function() {
     // Add settings functionality
     let updateInterval = 1000; // Default value, will be updated from server
     let connectionTimeout = 5; // Default value in seconds, will be updated from server
+    let settings = {
+        updateInterval: 1000,
+        connectionTimeout: 5,
+        copyFormat: "{IP}:{PORT}",
+        proxyCheckApiKey: '',
+        enableProxyCheck: false,
+        showLocalConnections: false
+    };
 
     // Add variable to store selected process name
     let selectedProcessName = null;
@@ -49,26 +57,27 @@ $(document).ready(function() {
     }
 
     function getConnectionKey(conn) {
-        return `${conn.remoteAddress || conn.ip}:${conn.remotePort || conn.port}`;
+        return `${conn.ip}:${conn.port}`;
     }
 
     function createConnectionsTable() {
         return $(`
             <div class="connections-table">
                 <div class="table-header">
-                    <div class="header-cell">Remote IP</div>
+                    <div class="header-cell">IP</div>
                     <div class="header-cell">Port</div>
                     <div class="header-cell">PID</div>
                     <div class="header-cell">Last Seen</div>
                     <div class="header-cell">Packets</div>
-                    <div class="header-cell"></div>
+                    ${settings.enableProxyCheck ? `<div class="header-cell ip-info">IP Info</div>` : ''}
+                    <div class="header-cell">Copy</div>
                 </div>
                 <div class="table-body"></div>
             </div>
         `);
     }
 
-    function createConnectionElement(conn) {
+    async function createConnectionElement(conn) {
         const now = new Date();
         const lastSeen = new Date(conn.lastSeen);
         const timeSinceLastSeen = (now - lastSeen) / 1000;
@@ -77,10 +86,10 @@ $(document).ready(function() {
         const $element = $(`
             <div class="table-row" data-key="${getConnectionKey(conn)}">
                 <div class="table-cell ip-cell selectable">
-                    ${conn.remoteAddress || conn.ip}
+                    ${conn.ip}
                 </div>
                 <div class="table-cell port-cell selectable">
-                    ${conn.remotePort || conn.port}
+                    ${conn.port}
                 </div>
                 <div class="table-cell pid-cell selectable">
                     ${conn.pid}
@@ -91,6 +100,11 @@ $(document).ready(function() {
                 <div class="table-cell packets-cell">
                     <span class="packet-count">${conn.packets}</span> packets
                 </div>
+                ${settings.enableProxyCheck ? `
+                    <div class="table-cell ip-info-cell">
+                        ${generateIpInfoHtml(conn.ipInfo)}
+                    </div>
+                ` : ''}
                 <div class="table-cell actions-cell">
                     <button class="copy-button" title="Copy: ${copyFormat}">
                         <i class="fas fa-copy"></i>
@@ -108,8 +122,8 @@ $(document).ready(function() {
         // Add click handler for copy button
         $element.find('.copy-button').on('click', function() {
             const textToCopy = copyFormat
-                .replace(/{IP}/g, conn.remoteAddress || conn.ip)
-                .replace(/{PORT}/g, conn.remotePort || conn.port)
+                .replace(/{IP}/g, conn.ip)
+                .replace(/{PORT}/g, conn.port)
                 .replace(/{PID}/g, conn.pid)
                 .replace(/{PROGRAM}/g, selectedProcessName || '');
 
@@ -137,14 +151,42 @@ $(document).ready(function() {
                 }, 1000);
             });
         });
-        
+
         return $element;
+    }
+
+    function generateIpInfoHtml(ipInfo) {
+        if (!ipInfo) return '<div class="ip-details">No details available</div>';
+
+        const location = [ipInfo.city, ipInfo.country].filter(Boolean).join(', ');
+        const orgInfo = [ipInfo.asn, ipInfo.provider].filter(Boolean).join(' ');
+        
+        return `
+            <div class="ip-details">
+                <div class="ip-details-content">
+                    <div class="ip-location">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span title="${location}">${location}</span>
+                    </div>
+                    <div class="ip-org">
+                        <i class="fas fa-server"></i>
+                        <span title="${orgInfo}">${orgInfo}</span>
+                    </div>
+                </div>
+                ${ipInfo.proxy === 'yes' ? `
+                    <div class="proxy-tag ${(ipInfo.type || '').toLowerCase()}">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>${ipInfo.type || 'PROXY'}</span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
     }
 
     function formatCopyText(conn) {
         return copyFormat
-            .replace(/{IP}/g, conn.remoteAddress || conn.ip)
-            .replace(/{PORT}/g, conn.remotePort || conn.port)
+            .replace(/{IP}/g, conn.ip)
+            .replace(/{PORT}/g, conn.port)
             .replace(/{PID}/g, conn.pid)
             .replace(/{PROGRAM}/g, selectedProcessName || '');
     }
@@ -385,9 +427,9 @@ $(document).ready(function() {
     }
 
     function updateConnectionsDisplay() {
-        const filteredConnections = $showLocalCheckbox.prop('checked') 
+        const filteredConnections = settings.showLocalConnections 
             ? allConnections 
-            : allConnections.filter(conn => !isLocalAddress(conn.remoteAddress || conn.ip));
+            : allConnections.filter(conn => !isLocalAddress(conn.ip));
 
         const currentProcessName = $processListDiv.find('.process-item.selected').data('name');
         
@@ -410,7 +452,7 @@ $(document).ready(function() {
         });
 
         // Process each connection
-        filteredConnections.forEach(conn => {
+        filteredConnections.forEach(async conn => {
             const key = getConnectionKey(conn);
             const $existing = existingConnections.get(key);
 
@@ -420,7 +462,7 @@ $(document).ready(function() {
                 existingConnections.delete(key);
             } else {
                 // Add new connection
-                const $element = createConnectionElement(conn);
+                const $element = await createConnectionElement(conn);
                 $tableBody.append($element);
             }
         });
@@ -431,7 +473,11 @@ $(document).ready(function() {
         });
     }
 
-    $showLocalCheckbox.on('change', updateConnectionsDisplay);
+    // Update showLocal checkbox handler to update settings
+    $showLocalCheckbox.on('change', function() {
+        settings.showLocalConnections = $(this).prop('checked');
+        updateConnectionsDisplay();
+    });
 
     function connectWebSocket() {
         ws = new WebSocket(`ws://${window.location.host}/ws`);
@@ -504,20 +550,6 @@ $(document).ready(function() {
     // Initial connection
     connectWebSocket();
 
-    // Add copy functionality
-    $(document).on('click', '.copy-button', function() {
-        const conn = JSON.parse($(this).data('connection'));
-        const textToCopy = formatCopyText(conn);
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            // Show a brief success indicator
-            const $button = $(this);
-            $button.find('i').removeClass('fa-copy').addClass('fa-check');
-            setTimeout(() => {
-                $button.find('i').removeClass('fa-check').addClass('fa-copy');
-            }, 1000);
-        });
-    });
-
     function updateSelectedProcessDisplay(process) {
         const display = $('.selected-process-display');
         if (process) {
@@ -579,7 +611,13 @@ $(document).ready(function() {
     // Settings modal handlers
     $('.settings-button').on('click', function() {
         $('#settings-modal').addClass('show');
-        $('#updateInterval').val(updateInterval);
+        // Load current settings into form
+        $('#updateInterval').val(settings.updateInterval);
+        $('#connectionTimeout').val(settings.connectionTimeout);
+        $('#copyFormat').val(settings.copyFormat);
+        $('#proxyCheckApiKey').val(settings.proxyCheckApiKey || '');
+        $('#enableProxyCheck').prop('checked', settings.enableProxyCheck || false);
+        $('#showLocal').prop('checked', settings.showLocalConnections);
     });
 
     // Close modal when clicking backdrop or close button
@@ -591,45 +629,73 @@ $(document).ready(function() {
 
     // Prevent modal content clicks from closing the modal
     $('.modal-content').on('click', function(e) {
-        if (!$(e.target).hasClass('close-modal') && !$(e.target).closest('.close-modal').length) {
-            e.stopPropagation();
-        }
+        e.stopPropagation();
     });
 
-    // Handle update interval changes
-    $('.apply-interval').on('click', function() {
-        const newInterval = parseInt($('#updateInterval').val());
-        if (newInterval >= 100 && newInterval <= 10000) {
-            updateInterval = newInterval;
-            ws.send(JSON.stringify({
-                type: 'updateInterval',
-                interval: newInterval
-            }));
-            // Show success feedback
-            const $button = $(this);
-            const oldText = $button.text();
-            $button.text('Applied!');
-            setTimeout(() => {
-                $button.text(oldText);
-            }, 1000);
-        }
-    });
+    // Save all settings
+    $('.save-settings').on('click', async function() {
+        const $button = $(this);
+        const newSettings = {
+            updateInterval: parseInt($('#updateInterval').val()),
+            connectionTimeout: parseInt($('#connectionTimeout').val()),
+            copyFormat: $('#copyFormat').val(),
+            proxyCheckApiKey: $('#proxyCheckApiKey').val().trim(),
+            enableProxyCheck: $('#enableProxyCheck').prop('checked'),
+            showLocalConnections: $('#showLocal').prop('checked')
+        };
 
-    // Handle connection timeout changes
-    $('.apply-timeout').on('click', function() {
-        const newTimeout = parseInt($('#connectionTimeout').val());
-        if (newTimeout >= 1 && newTimeout <= 3600) {
-            connectionTimeout = newTimeout;
-            ws.send(JSON.stringify({
-                type: 'connectionTimeout',
-                timeout: newTimeout
-            }));
-            // Show success feedback
-            const $button = $(this);
-            const oldText = $button.text();
-            $button.text('Applied!');
+        // Validate settings
+        if (newSettings.updateInterval < 100 || newSettings.updateInterval > 10000) {
+            alert('Update interval must be between 100ms and 10000ms');
+            return;
+        }
+        if (newSettings.connectionTimeout < 1 || newSettings.connectionTimeout > 3600) {
+            alert('Connection timeout must be between 1 and 3600 seconds');
+            return;
+        }
+        if (!newSettings.copyFormat) {
+            alert('Copy format cannot be empty');
+            return;
+        }
+
+        // Show loading state
+        const originalText = $button.text();
+        $button.text('Saving...').prop('disabled', true);
+
+        try {
+            // Save settings via HTTP
+            const response = await fetch('/settings/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSettings)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update local settings
+                Object.assign(settings, newSettings);
+                updateInterval = newSettings.updateInterval;
+                connectionTimeout = newSettings.connectionTimeout;
+                copyFormat = newSettings.copyFormat;
+
+                // Show success state
+                $button.text('Saved!').addClass('success');
+                setTimeout(() => {
+                    $button.text(originalText).removeClass('success').prop('disabled', false);
+                    $('#settings-modal').removeClass('show');
+                }, 1000);
+
+                // Refresh the display
+                updateConnectionsDisplay();
+            } else {
+                throw new Error(result.error || 'Failed to save settings');
+            }
+        } catch (error) {
+            console.error('Failed to save settings:', error);
+            $button.text('Error!').addClass('error');
             setTimeout(() => {
-                $button.text(oldText);
+                $button.text(originalText).removeClass('error').prop('disabled', false);
             }, 1000);
         }
     });
@@ -637,56 +703,22 @@ $(document).ready(function() {
     // Get initial settings from server
     fetch('/settings')
         .then(response => response.json())
-        .then(settings => {
+        .then(serverSettings => {
+            settings = serverSettings;
             updateInterval = settings.updateInterval;
             connectionTimeout = settings.connectionTimeout;
             copyFormat = settings.copyFormat || "{IP}:{PORT}";
+            
+            // Initialize form with current settings
             $('#updateInterval').val(updateInterval);
             $('#connectionTimeout').val(connectionTimeout);
             $('#copyFormat').val(copyFormat);
+            $('#proxyCheckApiKey').val(settings.proxyCheckApiKey || '');
+            $('#enableProxyCheck').prop('checked', settings.enableProxyCheck || false);
+            $('#showLocal').prop('checked', settings.showLocalConnections);
+
+            // Refresh the display after settings are loaded
+            updateConnectionsDisplay();
         })
         .catch(error => console.error('Error fetching settings:', error));
-
-    // Add settings handlers
-    $('.apply-format').click(function() {
-        const newFormat = $('#copyFormat').val().trim();
-        if (newFormat) {
-            copyFormat = newFormat;
-            
-            // Save to server
-            fetch('/settings/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ copyFormat: copyFormat })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Show success indicator
-                    const $button = $(this);
-                    $button.text('✓');
-                    setTimeout(() => {
-                        $button.text('Apply');
-                    }, 1000);
-                } else {
-                    alert('Failed to save copy format');
-                }
-            })
-            .catch(() => {
-                alert('Failed to save copy format');
-            });
-        }
-    });
-
-    // Add a timer to update relative times
-    setInterval(() => {
-        $('.time-cell').each(function() {
-            const timestamp = $(this).attr('data-timestamp');
-            if (timestamp) {
-                $(this).text(formatRelativeTime(timestamp));
-            }
-        });
-    }, 1000);
 });

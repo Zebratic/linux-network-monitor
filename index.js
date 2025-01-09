@@ -8,6 +8,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import ProxyCheckService from './proxycheck-service.js';
 
 const execAsync = promisify(exec);
 
@@ -20,14 +21,53 @@ let config = {
     port: 9000,
     updateInterval: 1000,
     connectionTimeout: 5,
-    copyFormat: "{IP}:{PORT}"
+    copyFormat: "{IP}:{PORT}",
+    proxyCheckApiKey: '',
+    enableProxyCheck: false,
+    showLocalConnections: true
 };
 
+// Function to safely save config
+async function saveConfig() {
+    try {
+        // Create a backup of the current config file if it exists
+        try {
+            const currentConfig = await fs.readFile(path.join(__dirname, 'config.json'), 'utf8');
+            await fs.writeFile(path.join(__dirname, 'config.json.backup'), currentConfig);
+        } catch (error) {
+            // Ignore if backup fails (e.g., first time running)
+        }
+
+        // Write the new config
+        await fs.writeFile(
+            path.join(__dirname, 'config.json'),
+            JSON.stringify(config, null, 4)
+        );
+        return true;
+    } catch (error) {
+        console.error('Failed to save config:', error);
+        // Try to restore from backup if save failed
+        try {
+            const backup = await fs.readFile(path.join(__dirname, 'config.json.backup'), 'utf8');
+            await fs.writeFile(path.join(__dirname, 'config.json'), backup);
+            config = JSON.parse(backup); // Restore config object
+        } catch (restoreError) {
+            console.error('Failed to restore config backup:', restoreError);
+        }
+        return false;
+    }
+}
+
+// Load existing config
 try {
     const configFile = await fs.readFile(path.join(__dirname, 'config.json'), 'utf8');
-    config = { ...config, ...JSON.parse(configFile) };
+    const loadedConfig = JSON.parse(configFile);
+    // Merge with defaults to ensure all fields exist
+    config = { ...config, ...loadedConfig };
 } catch (error) {
     console.warn('Failed to load config.json, using default values:', error);
+    // Save default config
+    await saveConfig();
 }
 
 // Check if running as root
@@ -108,28 +148,15 @@ app.get('/settings', (req, res) => {
     res.json({
         updateInterval: config.updateInterval,
         connectionTimeout: config.connectionTimeout,
-        copyFormat: config.copyFormat
+        copyFormat: config.copyFormat,
+        proxyCheckApiKey: config.proxyCheckApiKey,
+        enableProxyCheck: config.enableProxyCheck,
+        showLocalConnections: config.showLocalConnections
     });
 });
 
-// Settings update endpoint
-app.post('/settings/update', async (req, res) => {
-    try {
-        if (req.body.copyFormat !== undefined) {
-            config.copyFormat = req.body.copyFormat;
-            await fs.writeFile(
-                path.join(__dirname, 'config.json'),
-                JSON.stringify(config, null, 4)
-            );
-            res.json({ success: true });
-        } else {
-            res.status(400).json({ error: 'Invalid settings update' });
-        }
-    } catch (error) {
-        console.error('Failed to save settings:', error);
-        res.status(500).json({ error: 'Failed to save settings' });
-    }
-});
+// Initialize ProxyCheck service
+const proxyCheck = new ProxyCheckService(config);
 
 // API endpoint to get program icon
 app.get('/program-icon/:name', async (req, res) => {
@@ -169,6 +196,71 @@ app.get('/processes', async (req, res) => {
     res.json(Object.values(groupedProcesses));
 });
 
+// Settings update endpoint
+app.post('/settings/update', async (req, res) => {
+    try {
+        let hasUpdates = false;
+        const updates = {};
+
+        // Handle all possible settings updates
+        if (req.body.copyFormat !== undefined) {
+            updates.copyFormat = req.body.copyFormat;
+            hasUpdates = true;
+        }
+        if (req.body.proxyCheckApiKey !== undefined) {
+            updates.proxyCheckApiKey = req.body.proxyCheckApiKey;
+            hasUpdates = true;
+        }
+        if (req.body.enableProxyCheck !== undefined) {
+            updates.enableProxyCheck = req.body.enableProxyCheck;
+            hasUpdates = true;
+        }
+        if (req.body.updateInterval !== undefined) {
+            updates.updateInterval = req.body.updateInterval;
+            hasUpdates = true;
+        }
+        if (req.body.connectionTimeout !== undefined) {
+            updates.connectionTimeout = req.body.connectionTimeout;
+            hasUpdates = true;
+        }
+        if (req.body.showLocalConnections !== undefined) {
+            updates.showLocalConnections = req.body.showLocalConnections;
+            hasUpdates = true;
+        }
+
+        if (hasUpdates) {
+            // Update config object
+            Object.assign(config, updates);
+
+            // Apply updates to services
+            if (updates.proxyCheckApiKey !== undefined) {
+                proxyCheck.setApiKey(updates.proxyCheckApiKey);
+            }
+            if (updates.enableProxyCheck !== undefined) {
+                proxyCheck.setEnabled(updates.enableProxyCheck);
+            }
+            if (updates.connectionTimeout !== undefined) {
+                currentParsers.forEach(parser => {
+                    parser.setTimeout(updates.connectionTimeout);
+                });
+            }
+
+            // Save config to file
+            const saved = await saveConfig();
+            if (saved) {
+                res.json({ success: true });
+            } else {
+                res.status(500).json({ error: 'Failed to save settings' });
+            }
+        } else {
+            res.status(400).json({ error: 'Invalid settings update' });
+        }
+    } catch (error) {
+        console.error('Failed to update settings:', error);
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
+});
+
 // WebSocket endpoint
 app.ws('/ws', (ws, req) => {
     clients.add(ws);
@@ -176,47 +268,22 @@ app.ws('/ws', (ws, req) => {
     
     ws.on('message', async (msg) => {
         const data = JSON.parse(msg);
-        if (data.type === 'monitor' && data.pids) {
-            // Stop existing parsers if any
-            currentParsers.forEach(parser => parser.stopMonitoring());
-            currentParsers.clear();
-            
-            // Start new parsers for each PID
-            data.pids.forEach(pid => {
-                const parser = new straceParser(config.connectionTimeout);
-                parser.startMonitoring(pid);
-                currentParsers.set(pid, parser);
-            });
-        } else if (data.type === 'updateInterval') {
-            // Update the interval in config
-            config.updateInterval = data.interval;
-            // Save the new config
-            try {
-                await fs.writeFile(
-                    path.join(__dirname, 'config.json'),
-                    JSON.stringify({ ...config }, null, 4)
-                );
-            } catch (error) {
-                console.error('Failed to save config:', error);
-            }
-        } else if (data.type === 'connectionTimeout') {
-            // Update the timeout in config
-            config.connectionTimeout = data.timeout;
-            
-            // Update timeout for all existing parsers
-            currentParsers.forEach(parser => {
-                parser.setTimeout(data.timeout);
-            });
-            
-            // Save the new config
-            try {
-                await fs.writeFile(
-                    path.join(__dirname, 'config.json'),
-                    JSON.stringify({ ...config }, null, 4)
-                );
-            } catch (error) {
-                console.error('Failed to save config:', error);
-            }
+
+        switch (data.type) {
+            case 'monitor':
+                if (data.pids) {
+                    // Stop existing parsers if any
+                    currentParsers.forEach(parser => parser.stopMonitoring());
+                    currentParsers.clear();
+                    
+                    // Start new parsers for each PID
+                    data.pids.forEach(pid => {
+                        const parser = new straceParser(config.connectionTimeout);
+                        parser.startMonitoring(pid);
+                        currentParsers.set(pid, parser);
+                    });
+                }
+                break;
         }
     });
 
@@ -252,16 +319,26 @@ app.listen(config.port, () => {
 setInterval(() => {
     // Only process and send updates if there are clients connected
     if (clients.size > 0 && currentParsers.size > 0) {
-
         // Combine connections from all parsers
         const allConnections = Array.from(currentParsers.values()).reduce((acc, parser) => {
             return acc.concat(parser.getConnections());
         }, []);
 
-        clients.forEach(client => {
-            if (client.readyState === 1) { // 1 = OPEN
-                client.send(JSON.stringify(allConnections));
-            }
+        // Enrich connections with IP details
+        proxyCheck.enrichConnections(allConnections).then(enrichedConnections => {
+            clients.forEach(client => {
+                if (client.readyState === 1) { // 1 = OPEN
+                    client.send(JSON.stringify(enrichedConnections));
+                }
+            });
+        }).catch(error => {
+            console.error('Error enriching connections:', error);
+            // Send original connections if enrichment fails
+            clients.forEach(client => {
+                if (client.readyState === 1) {
+                    client.send(JSON.stringify(allConnections));
+                }
+            });
         });
     }
 }, config.updateInterval);

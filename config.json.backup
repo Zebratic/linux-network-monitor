@@ -5,5 +5,5 @@
     "copyFormat": "{IP}:{PORT}",
     "proxyCheckApiKey": "",
     "enableProxyCheck": true,
-    "showLocalConnections": true
+    "showLocalConnections": false
 }
