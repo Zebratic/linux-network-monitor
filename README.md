@@ -55,11 +55,6 @@ cd linux-network-monitor
 npm install
 ```
 
-3. Create a configuration file (optional):
-```bash
-cp config.example.json config.json
-```
-
 ## Usage
 
 ### Method 1: Run Directly
@@ -167,6 +162,7 @@ The application can be configured through the web interface or by editing `confi
 - ASN information
 - Provider details
 - Connection type identification
+- *(API Key is optional)*
 
 ### User Interface
 - Responsive design
