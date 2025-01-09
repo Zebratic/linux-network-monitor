@@ -110,6 +110,13 @@ sudo systemctl status linux-network-monitor
 sudo journalctl -u linux-network-monitor -f
 ```
 
+### Uninstall
+
+To remove the application, run the uninstall script:
+```bash
+sudo /opt/linux-network-monitor/uninstall.sh 
+```
+
 ## Configuration
 
 The application can be configured through the web interface or by editing `config.json`:
